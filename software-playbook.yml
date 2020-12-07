@@ -1,0 +1,169 @@
+---
+- hosts: all
+  become: true
+  vars:
+    home_dir: "/home/vagrant"
+    file_owner: vagrant
+
+  tasks:
+  - name: Install packages that allow apt to be used over HTTPS
+    apt:
+      name: "{{ packages }}"
+      state: present
+      update_cache: yes
+    vars:
+      packages:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg-agent
+      - software-properties-common
+      - resolvconf
+      - build-essential
+      - git 
+      - libssl-dev 
+      - man
+      - openjdk-8-jdk
+      - unzip
+      - zip
+      - maven
+
+  - name: Add configuration block in /etc/resolvconf/resolv.conf.d/head
+    blockinfile:
+      path: /etc/resolvconf/resolv.conf.d/head
+      block: |
+        nameserver 8.8.8.8
+        nameserver 8.8.4.4
+        
+  - name: Restart resolvconf
+    service:
+      name: resolvconf
+      state: restarted
+      
+  - name: Add an apt signing key for Docker
+    apt_key:
+      url: https://download.docker.com/linux/ubuntu/gpg
+      state: present
+
+  - name: Add apt repository for stable version
+    apt_repository:
+      repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable
+      state: present
+
+  - name: Install docker and its dependecies
+    apt: 
+      name: "{{ packages }}"
+      state: present
+      update_cache: yes
+    vars:
+      packages:
+      - docker-ce 
+      - docker-ce-cli 
+      - containerd.io
+    notify:
+      - docker status
+
+  - name: Add vagrant user to docker group
+    user:
+      name: vagrant
+      group: docker
+
+  - name: Remove swapfile from /etc/fstab
+    mount:
+      name: "{{ item }}"
+      fstype: swap
+      state: absent
+    with_items:
+      - swap
+      - none
+
+  - name: Disable swap
+    command: swapoff -a
+    when: ansible_swaptotal_mb > 0
+
+  - name: download golang  
+    get_url:
+      url: "https://storage.googleapis.com/golang/go1.13.3.linux-amd64.tar.gz"
+      dest: "{{home_dir}}"
+      mode: 0440
+     
+  - name: Remove old installation of Go
+    file:
+      path: /usr/local/go
+      state: absent
+    become: yes
+ 
+  - name: Extract the Go tarball
+    unarchive:
+      src: "{{home_dir}}/go1.13.3.linux-amd64.tar.gz"
+      dest: /usr/local
+      copy: no
+    become: yes
+ 
+  - name: create go directories in home
+    file:
+      path: "{{item}}"
+      state: directory
+      owner: "{{file_owner}}"
+      group: "{{file_owner}}"
+      mode: 0775
+    with_items:
+    - "{{home_dir}}/go"
+    - "{{home_dir}}/go/bin"
+     
+  - name: modify .bashrc
+    blockinfile:
+      dest: "{{home_dir}}/.bashrc"
+      block: |
+        export GOPATH=$HOME/go
+        export GOBIN=$GOPATH/bin
+        export PATH=$GOBIN:$PATH:/usr/local/go/bin
+        export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64
+        export MAVEN_HOME=/usr/share/maven/usr/share/maven
+        export PATH=$PATH:$JAVA_HOME/bin:$MAVEN_HOME/bin
+      marker: '# {mark} ANSIBLE MANAGED BLOCK - changes for golang'
+      insertafter: EOF
+      create: yes 
+     
+  - name: Remove the Go tarball
+    file:
+      path: "{{home_dir}}/go1.13.3.linux-amd64.tar.gz"
+      state: absent
+    become: yes
+
+  - name: download docker-compose  
+    get_url: 
+      url : https://github.com/docker/compose/releases/download/1.27.4/docker-compose-Linux-x86_64
+      dest: /usr/local/bin/docker-compose
+      mode: 'u+x,g+x'
+
+  - name: download Gradle and unarchive 
+    unarchive:
+      src: https://services.gradle.org/distributions/gradle-6.7-all.zip
+      dest: /opt/gradle
+      remote_src: yes
+
+     
+  - name: modify .bashrc
+    blockinfile:
+      dest: "{{home_dir}}/.bashrc"
+      block: |
+        export GRADLE_HOME=/opt/gradle/gradle
+        export PATH=${GRADLE_HOME}/bin:${PATH}
+      marker: '# {mark} ANSIBLE MANAGED BLOCK - changes for Gradle'
+      insertafter: EOF
+      create: yes 
+     
+
+  # - name: download docker-compose  
+  #   get_url: 
+  #     url : https://bit.ly/2ysbOFE
+  #     dest: /vagrant/
+  #     mode: 'u+x,g+x'
+
+  # - name: Executing a script
+  #   command: "sh /vagrant/bootstrap.sh 2.2.1 1.4.9"
+
+  handlers:
+    - name: docker status
+      service: name=docker state=started
