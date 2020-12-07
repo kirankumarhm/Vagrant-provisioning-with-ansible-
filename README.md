@@ -7,4 +7,6 @@
   - **zip**
   - **maven**
   - **golang 1.13**
+  - **docker**
+  - **docker-compose**
       
