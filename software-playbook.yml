@@ -1,11 +1,12 @@
 ---
 - hosts: all
-  become: true
+  # become: true
   vars:
     home_dir: "/home/vagrant"
     file_owner: vagrant
 
   tasks:
+
   - name: Install packages that allow apt to be used over HTTPS
     apt:
       name: "{{ packages }}"
@@ -27,6 +28,7 @@
       - unzip
       - zip
       - maven
+    become: yes
 
   - name: Add configuration block in /etc/resolvconf/resolv.conf.d/head
     blockinfile:
@@ -34,21 +36,25 @@
       block: |
         nameserver 8.8.8.8
         nameserver 8.8.4.4
-        
+    become: yes
+
   - name: Restart resolvconf
     service:
       name: resolvconf
       state: restarted
-      
+    become: yes
+
   - name: Add an apt signing key for Docker
     apt_key:
       url: https://download.docker.com/linux/ubuntu/gpg
       state: present
+    become: yes
 
   - name: Add apt repository for stable version
     apt_repository:
       repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable
       state: present
+    become: yes
 
   - name: Install docker and its dependecies
     apt: 
@@ -62,11 +68,13 @@
       - containerd.io
     notify:
       - docker status
+    become: yes
 
   - name: Add vagrant user to docker group
     user:
       name: vagrant
       group: docker
+    become: yes
 
   - name: Remove swapfile from /etc/fstab
     mount:
@@ -76,14 +84,16 @@
     with_items:
       - swap
       - none
+    become: yes
 
   - name: Disable swap
     command: swapoff -a
     when: ansible_swaptotal_mb > 0
-
+    become: yes
+    
   - name: download golang  
     get_url:
-      url: "https://storage.googleapis.com/golang/go1.13.3.linux-amd64.tar.gz"
+      url: "https://golang.org/dl/go1.15.10.linux-amd64.tar.gz"
       dest: "{{home_dir}}"
       mode: 0440
      
@@ -95,7 +105,7 @@
  
   - name: Extract the Go tarball
     unarchive:
-      src: "{{home_dir}}/go1.13.3.linux-amd64.tar.gz"
+      src: "{{home_dir}}/go1.15.10.linux-amd64.tar.gz"
       dest: /usr/local
       copy: no
     become: yes
@@ -127,22 +137,38 @@
      
   - name: Remove the Go tarball
     file:
-      path: "{{home_dir}}/go1.13.3.linux-amd64.tar.gz"
+      path: "{{home_dir}}/go1.15.10.linux-amd64.tar.gz"
       state: absent
     become: yes
 
   - name: download docker-compose  
     get_url: 
-      url : https://github.com/docker/compose/releases/download/1.27.4/docker-compose-Linux-x86_64
+      url : https://github.com/docker/compose/releases/download/1.28.6/docker-compose-Linux-x86_64
       dest: /usr/local/bin/docker-compose
       mode: 'u+x,g+x'
+    become: yes
+
+  - name: Change file ownership, group and permissions
+    file:
+      path: /usr/local/bin/docker-compose
+      owner: vagrant
+      group: vagrant
+      mode: '0755'
+    become: yes
+
+  - name: Change file ownership, group and permissions
+    file:
+      path: /opt/gradle
+      state: directory
+      mode: '0755'
+    become: yes
 
   - name: download Gradle and unarchive 
     unarchive:
-      src: https://services.gradle.org/distributions/gradle-6.7-all.zip
+      src: https://services.gradle.org/distributions/gradle-6.7-bin.zip
       dest: /opt/gradle
       remote_src: yes
-
+    become: yes
      
   - name: modify .bashrc
     blockinfile:
@@ -154,15 +180,30 @@
       insertafter: EOF
       create: yes 
      
+  - name: Download nvm script
+    get_url:
+      url: https://raw.githubusercontent.com/creationix/nvm/v0.35.3/install.sh 
+      dest: /tmp/install.sh 
+      mode: '0440'
 
-  # - name: download docker-compose  
-  #   get_url: 
-  #     url : https://bit.ly/2ysbOFE
-  #     dest: /vagrant/
-  #     mode: 'u+x,g+x'
+  - name: Change file ownership, group and permissions
+    file:
+      path: /tmp/install.sh 
+      owner: vagrant
+      group: vagrant
+      mode: '0755'
 
-  # - name: Executing a script
-  #   command: "sh /vagrant/bootstrap.sh 2.2.1 1.4.9"
+  - name: Install nvm
+    shell: /tmp/install.sh 
+
+  - name: Source nvm
+    shell: . ~/.profile 
+
+  - name: Install node and set version
+    shell: >
+      /bin/bash -c "source ~/.nvm/nvm.sh && nvm install v14.16.0 && nvm alias default v14.16.0"
+      
+
 
   handlers:
     - name: docker status
