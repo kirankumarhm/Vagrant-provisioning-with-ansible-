@@ -28,6 +28,7 @@
       - unzip
       - zip
       - maven
+      - jq
     become: yes
 
   - name: Add configuration block in /etc/resolvconf/resolv.conf.d/head
